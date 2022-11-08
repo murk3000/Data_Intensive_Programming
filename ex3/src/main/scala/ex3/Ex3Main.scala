@@ -152,6 +152,9 @@ object Ex3Main extends App {
 
 
 
+  // Stop the Spark session
+  spark.stop()
+
   def printTaskLine(taskNumber: Int): Unit = {
     println(s"======\nTask $taskNumber\n======")
   }
