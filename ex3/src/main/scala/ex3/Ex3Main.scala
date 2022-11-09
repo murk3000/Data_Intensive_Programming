@@ -1,32 +1,28 @@
 package ex3
 
 import org.apache.spark.SparkConf
-
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Dataset
-
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.types.{ArrayType, StringType, StructField}
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.functions.{sum, min, max, asc, desc, udf}
-
-import org.apache.spark.sql.functions.explode
-import org.apache.spark.sql.functions.array
+import org.apache.spark.sql.types.{DataType, DateType}
+import org.apache.spark.sql.functions.{array, asc, col, count, desc, explode, max, min, rtrim, substring, substring_index, sum, to_date, udf}
 import org.apache.spark.sql.SparkSession
-
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
 import java.lang.Thread
 import scala.language.postfixOps
 import sys.process._
-
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
+import org.apache.spark.sql.streaming.Trigger
+
+case class Sales(year: Int, euros: Int)
+
 
 object Ex3Main extends App {
 	val spark = SparkSession.builder()
@@ -46,14 +42,29 @@ object Ex3Main extends App {
   // Task 1: File "data/sales_data_sample.csv" contains sales data of a retailer.
   //         Study the file and read the data into DataFrame retailerDataFrame.
   //         NOTE: the resulting DataFrame should have 25 columns
-  val  retailerDataFrame: DataFrame = ???
+  val  retailerDataFrame: DataFrame = spark.read.options(
+    Map("inferSchema"->"true", "header"->"true", "delimiter"->";")
+  ).csv("data/sales_data_sample.csv")
+//  retailerDataFrame.show()
+//  retailerDataFrame.printSchema()
 
 
 
   printTaskLine(2)
   // Task 2: Find the best 10 selling days. That is the days for which QUANTITYORDERED * PRICEEACH
   //         gets the highest values.
-  val best10DaysDF: DataFrame = ???
+
+  val best10DaysDF: DataFrame = retailerDataFrame.withColumn(
+    "orderdt", substring_index(col("ORDERDATE")," ",1)
+  ).withColumn(
+    "sale2", col("QUANTITYORDERED")*col("PRICEEACH")
+  ).groupBy("orderdt").agg(
+    count("ORDERNUMBER") as "count",
+    sum("SALES") as "sales",
+    sum("sale2") as "sales2"
+  ).sort(col("sales").desc).limit(10)
+
+  best10DaysDF.show(10)
 
 
 
@@ -70,13 +81,13 @@ object Ex3Main extends App {
   import spark.implicits._
   val salesList = List(Sales(2015, 325), Sales(2016, 100), Sales(2017, 15), Sales(2018, 1000),
                        Sales(2019, 50), Sales(2020, 750), Sales(2021, 950), Sales(2022, 400))
-  val salesDS: Dataset[Sales] = spark.???
+  val salesDS: Dataset[Sales] = spark.createDataset[Sales](salesList)
 
-  val sales2019: Sales = salesDS.???
+  val sales2019: Sales = salesDS.filter(r => r.year==2019).head
   println(f"Sales for 2019 is ${sales2019.euros}")
 
-  val maximumSales: Sales = salesDS.???
-  println(f"Maximum sales: year = ${maximumSales.year}, euros = ${maximumSales.euros}")
+//  val maximumSales: Sales = salesDS.agg(max("euros")).as[Sales].head // I'm not sure about this
+//  println(f"Maximum sales: year = ${maximumSales.year}, euros = ${maximumSales.euros}")
 
 
 
@@ -88,13 +99,13 @@ object Ex3Main extends App {
   //         Query for the sales on 2019 and the year with the highest amount of sales in this case.
   val multiSalesList = salesList ++ List(Sales(2016, 250), Sales(2017, 600), Sales(2019, 75),
                                          Sales(2020, 225), Sales(2016, 350), Sales(2017, 400))
-  val multiSalesDS: Dataset[Sales] = spark.???
+  val multiSalesDS: Dataset[Sales] = spark.createDataset[Sales](multiSalesList)
 
-  val multiSales2019: Sales = multiSalesDS.???
+  val multiSales2019: Sales = multiSalesDS.filter(r=>r.year==2019).reduce((l,r)=>new Sales(l.year, l.euros+r.euros))
   println(f"Total sales for 2019 is ${multiSales2019.euros}")
 
-  val maximumMultiSales: Sales = multiSalesDS.???
-  println(f"Maximum total sales: year = ${maximumMultiSales.year}, euros = ${maximumMultiSales.euros}")
+//  val maximumMultiSales: Sales = multiSalesDS.???
+//  println(f"Maximum total sales: year = ${maximumMultiSales.year}, euros = ${maximumMultiSales.euros}")
 
 
 
@@ -108,35 +119,43 @@ object Ex3Main extends App {
   //         Hint: Spark cannot infer the schema of streaming data, so you have to give it explicitly.
   //
   //         Note: you cannot really test this task before you have also done the tasks 6 and 7.
-  val retailerStreamingDF: DataFrame = ???
+  val retailerStreamingDF: DataFrame = spark.readStream.schema(retailerDataFrame.schema).options(
+    Map("delimiter"->";", "header"->"true")
+  ).csv("streamingData/")
 
 
 
   printTaskLine(6)
   // Task 6: Find the best selling days in the streaming data
-  val best10DaysDFStreaming = ???
-
+  val best10DaysDFStreaming = retailerStreamingDF.withColumn(
+    "orderdt", substring_index(col("ORDERDATE")," ",1)
+  ).withColumn(
+    "sale2", col("QUANTITYORDERED")*col("PRICEEACH")
+  ).groupBy("orderdt").agg(
+    sum("SALES") as "sales",
+    sum("sale2") as "sales2"
+  ).sort(col("sales").desc).limit(10)
 
 
   printTaskLine(7)
   // Task 7: Test your solution by writing the 10 best selling days to stdout
   //         whenever the DataFrame changes
 
-  ???
+  best10DaysDFStreaming.writeStream.format("console").outputMode("complete").trigger(Trigger.ProcessingTime("5 second")).start().awaitTermination(40000)
 
   // You can test your solution by uncommenting the following code snippet.
   // The loop adds a new CSV file to the directory "streamingData" every 5th second.
   // If you rerun the test, remove all the CSV files first from the directory "streamingData".
   // You may need to wait for a while to see the stream processing results while running the program.
 
-  //  val repoFiles = "ls streamingDataRepo" !!
-  //
-  //  for(filename <- repoFiles.split("\n")){
-  //	  val copyCommand = f"cp streamingDataRepo/${filename} streamingData/${filename}.csv"
-  //    val _ = copyCommand !!
-  //
-  //    Thread.sleep(5000)
-  //  }
+    val repoFiles = "ls streamingDataRepo" !!
+
+    for(filename <- repoFiles.split("\n")){
+  	  val copyCommand = f"cp streamingDataRepo/${filename} streamingData/${filename}.csv"
+      val _ = copyCommand !!
+
+      Thread.sleep(5000)
+    }
 
   // NOTE: In Windows environment, use the following modified code snippet:
 
@@ -159,3 +178,4 @@ object Ex3Main extends App {
     println(s"======\nTask $taskNumber\n======")
   }
 }
+
