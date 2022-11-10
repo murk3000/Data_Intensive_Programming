@@ -9,7 +9,7 @@ import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.types.{ArrayType, StringType, StructField}
 import org.apache.spark.sql.types.{DataType, DateType}
-import org.apache.spark.sql.functions.{array, asc, col, count, desc, explode, max, min, rtrim, substring, substring_index, sum, to_date, udf}
+import org.apache.spark.sql.functions.{array, asc, col, count, desc, explode, max, min, rtrim, round, substring, substring_index, sum, to_date, udf}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -54,14 +54,12 @@ object Ex3Main extends App {
   // Task 2: Find the best 10 selling days. That is the days for which QUANTITYORDERED * PRICEEACH
   //         gets the highest values.
 
-  val best10DaysDF: DataFrame = retailerDataFrame.withColumn(
-    "orderdt", substring_index(col("ORDERDATE")," ",1)
-  ).withColumn(
-    "sale2", col("QUANTITYORDERED")*col("PRICEEACH")
+  val best10DaysDF: DataFrame = retailerDataFrame.withColumns(
+    Map("orderdt"-> substring_index(col("ORDERDATE")," ",1),
+    "sales"->col("QUANTITYORDERED")*col("PRICEEACH"))
   ).groupBy("orderdt").agg(
     count("ORDERNUMBER") as "count",
-    sum("SALES") as "sales",
-    sum("sale2") as "sales2"
+    round(sum("sales"),2) as "sales"
   ).sort(col("sales").desc).limit(10)
 
   best10DaysDF.show(10)
@@ -86,8 +84,9 @@ object Ex3Main extends App {
   val sales2019: Sales = salesDS.filter(r => r.year==2019).head
   println(f"Sales for 2019 is ${sales2019.euros}")
 
-//  val maximumSales: Sales = salesDS.agg(max("euros")).as[Sales].head // I'm not sure about this
-//  println(f"Maximum sales: year = ${maximumSales.year}, euros = ${maximumSales.euros}")
+//  val maximumSales: Sales = salesDS.agg(max("euros")).as[Sales].head // Initial try after which I asked about this in the Q&A Section and got some new insight
+  val maximumSales: Sales = salesDS.reduce((l,r) => if (l.euros>r.euros)  l else r)
+  println(f"Maximum sales: year = ${maximumSales.year}, euros = ${maximumSales.euros}")
 
 
 
@@ -104,8 +103,10 @@ object Ex3Main extends App {
   val multiSales2019: Sales = multiSalesDS.filter(r=>r.year==2019).reduce((l,r)=>new Sales(l.year, l.euros+r.euros))
   println(f"Total sales for 2019 is ${multiSales2019.euros}")
 
-//  val maximumMultiSales: Sales = multiSalesDS.???
-//  println(f"Maximum total sales: year = ${maximumMultiSales.year}, euros = ${maximumMultiSales.euros}")
+//  val maximumMultiSales: Sales = multiSalesDS.groupBy("year").agg(max("euros")).as[Sales].head
+  val maximumMultiSales: Sales = multiSalesDS.groupByKey(r => r.year).reduceGroups((l,r)=>new Sales(l.year,l.euros+r.euros))
+    .map(r=>r._2).reduce((l,r)=>if (l.euros > r.euros) l else r)
+  println(f"Maximum total sales: year = ${maximumMultiSales.year}, euros = ${maximumMultiSales.euros}")
 
 
 
@@ -127,21 +128,19 @@ object Ex3Main extends App {
 
   printTaskLine(6)
   // Task 6: Find the best selling days in the streaming data
-  val best10DaysDFStreaming = retailerStreamingDF.withColumn(
-    "orderdt", substring_index(col("ORDERDATE")," ",1)
-  ).withColumn(
-    "sale2", col("QUANTITYORDERED")*col("PRICEEACH")
+
+  val best10DaysDFStreaming = retailerStreamingDF.selectExpr("ORDERNUMBER", "substring_index(ORDERDATE, ' ', 1) as orderdt", "QUANTITYORDERED*PRICEEACH as sales"
   ).groupBy("orderdt").agg(
-    sum("SALES") as "sales",
-    sum("sale2") as "sales2"
-  ).sort(col("sales").desc).limit(10)
+    count("ORDERNUMBER") as "count",
+    round(sum("sales"),2) as "sales"
+  ).sort(col("sales").desc)
 
 
   printTaskLine(7)
   // Task 7: Test your solution by writing the 10 best selling days to stdout
   //         whenever the DataFrame changes
 
-  best10DaysDFStreaming.writeStream.format("console").outputMode("complete").trigger(Trigger.ProcessingTime("5 second")).start().awaitTermination(40000)
+  best10DaysDFStreaming.limit(10).writeStream.format("console").outputMode("complete").trigger(Trigger.ProcessingTime("5 second")).start().awaitTermination(40000)
 
   // You can test your solution by uncommenting the following code snippet.
   // The loop adds a new CSV file to the directory "streamingData" every 5th second.
