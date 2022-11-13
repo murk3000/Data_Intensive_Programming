@@ -1,0 +1,20 @@
+# ignore build files
+**/target/*
+
+# ignore IntelliJ files
+**/.idea/*
+
+# ignore Visual Studio Code files
+**/.vscode/*
+**/.metals/*
+**/.bloop/*
+**/metals.sbt
+**/project/project/**
+**/.bsp/*
+
+# ignore the extra files generated at task 7
+**/*SUCCESS*
+**/*.crc
+
+# ignore the CSV files generated at task 7
+results/*.csv
