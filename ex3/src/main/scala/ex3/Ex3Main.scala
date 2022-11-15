@@ -114,7 +114,7 @@ object Ex3Main extends App {
 
   printTaskLine(6)
   // Task 6: Find the best selling days in the streaming data
-  val best10DaysDFStreaming = ???
+  val bestDaysDFStreaming = ???
 
 
 
