@@ -128,6 +128,10 @@ object Ex3Main extends App {
 
   printTaskLine(6)
   // Task 6: Find the best selling days in the streaming data
+<<<<<<< HEAD
+=======
+  val bestDaysDFStreaming = ???
+>>>>>>> 4a446db8d43945fc68f7f9b45434c7b568041026
 
   val best10DaysDFStreaming = retailerStreamingDF.selectExpr("ORDERNUMBER", "substring_index(ORDERDATE, ' ', 1) as orderdt", "QUANTITYORDERED*PRICEEACH as sales"
   ).groupBy("orderdt").agg(
