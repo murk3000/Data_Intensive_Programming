@@ -18,9 +18,11 @@ val  retailerDataFrame: DataFrame = spark.read.options(
   Map("inferSchema"->"true", "header"->"true", "delimiter"->";")
 ).csv("Documents/DIP/Exercises/ex3/data/sales_data_sample.csv")
 
-retailerDataFrame.withColumns(
-  Map("orderdt"->col("ORDERDATE"))
-).select("orderdt").show()
+retailerDataFrame.select("ORDERDATE").show(50)
+
+//retailerDataFrame.withColumns(
+//  Map("orderdt"->col("ORDERDATE"))
+//).select("orderdt").show()
 
 //val best10DaysDF: DataFrame = retailerDataFrame.withColumn(
 //  "orderdt", substring_index(col("ORDERDATE")," ",1)
